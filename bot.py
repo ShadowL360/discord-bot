@@ -35,7 +35,7 @@ try:
     # Modelo Flash mais recente disponível publicamente (em meados de 2024).
     # Verifique a documentação oficial do Google AI para os nomes de modelo mais atuais disponíveis para sua API Key.
     # 'gemini-2.0-flash' não é um nome de modelo público padrão no momento.
-    MODEL_NAME = 'gemini-1.5-flash-latest'
+    MODEL_NAME = 'gemini-2.0-flash'
     model = genai.GenerativeModel(MODEL_NAME, safety_settings=safety_settings)
     log.info(f"API Gemini configurada com sucesso com o modelo '{MODEL_NAME}'.")
 except Exception as e:
