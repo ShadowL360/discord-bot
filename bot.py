@@ -32,22 +32,25 @@ try:
         {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
         {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
     ]
-    # Certifique-se que 'gemini-2.0-flash' é um modelo válido e disponível para sua API Key
-    # Modelos comuns são 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro'
-    model = genai.GenerativeModel('gemini-1.5-flash-latest', safety_settings=safety_settings) # <<< VERIFIQUE O NOME DO MODELO CORRETO AQUI
-    log.info("API Gemini configurada com sucesso com o modelo gemini-1.5-flash-latest.") # Usei gemini-1.5-flash como exemplo mais comum
+    # Modelo Flash mais recente disponível publicamente (em meados de 2024).
+    # Verifique a documentação oficial do Google AI para os nomes de modelo mais atuais disponíveis para sua API Key.
+    # 'gemini-2.0-flash' não é um nome de modelo público padrão no momento.
+    MODEL_NAME = 'gemini-1.5-flash-latest'
+    model = genai.GenerativeModel(MODEL_NAME, safety_settings=safety_settings)
+    log.info(f"API Gemini configurada com sucesso com o modelo '{MODEL_NAME}'.")
 except Exception as e:
     log.exception(f"Erro ao configurar a API Gemini: {e}")
     exit()
 
 # --- Ponto Crítico: Intents ---
 # Habilite a "Message Content Intent" no Discord Developer Portal!
+# Vá para https://discord.com/developers/applications -> Seu App -> Bot -> Privileged Gateway Intents
 intents = discord.Intents.default()
-intents.messages = True         # Necessário para receber eventos de mensagem
-intents.guilds = True           # Necessário para funcionar em servidores
-intents.message_content = True  # NECESSÁRIO PARA LER O CONTEÚDO DAS MENSAGENS EM SERVIDORES
+intents.messages = True         # Necessário para receber eventos de mensagem (on_message)
+intents.guilds = True           # Necessário para identificar servidores, canais, etc.
+intents.message_content = True  # NECESSÁRIO PARA LER O CONTEÚDO DAS MENSAGENS EM SERVIDORES (Requer verificação do bot >100 servidores)
 
-# Criar o cliente do Discord
+# Criar o cliente do Discord (funciona com discord.py v2.0+)
 client = discord.Client(intents=intents)
 
 @client.event
@@ -55,53 +58,59 @@ async def on_ready():
     """Evento chamado quando o bot está conectado e pronto."""
     log.info(f'Bot conectado como {client.user}')
     log.info(f'ID do Bot: {client.user.id}')
-    log.info('------')
     # Define o status do bot (opcional)
-    await client.change_presence(activity=discord.Game(name="Respondendo menções com Gemini"))
+    await client.change_presence(activity=discord.Game(name="Respondendo menções com Gemini 1.5 Flash"))
+    log.info('------ Bot Pronto ------')
+
 
 @client.event
-async def on_message(message):
+async def on_message(message: discord.Message): # Adicionado type hint para clareza
     """Evento chamado quando uma mensagem é recebida."""
     # 1. Ignorar mensagens do próprio bot
     if message.author == client.user:
         return
 
-    # 2. Ignorar mensagens que não são DMs nem mencionam o bot
-    # Verifica se a mensagem é uma DM OU se o bot foi mencionado
+    # 2. Determinar se o bot deve responder
     is_dm = isinstance(message.channel, discord.DMChannel)
     mentioned = client.user.mentioned_in(message)
 
+    # Ignorar se não for DM e não for menção direta
     if not is_dm and not mentioned:
-        #log.debug(f"Mensagem ignorada (não é DM nem menção): '{message.content}'")
+        # log.debug(f"Mensagem ignorada (não é DM nem menção): '{message.content}'") # Descomente para debug detalhado
         return
 
-    # 3. Obter o conteúdo da mensagem
+    # 3. Obter o conteúdo da mensagem limpo
     user_message = ""
     if mentioned:
-        # Remove a menção do bot da mensagem para obter a pergunta real
-        # Limpa espaços extras nas bordas
-        user_message = message.content.replace(f'<@!{client.user.id}>', '', 1).replace(f'<@{client.user.id}>', '', 1).strip()
-        log.info(f"Menção recebida de {message.author} no canal #{message.channel} (Servidor: {message.guild}): '{user_message}'")
+        # Remove a menção do bot (tanto <@!ID> quanto <@ID>) e espaços extras
+        clean_content = message.content.replace(f'<@!{client.user.id}>', '', 1).replace(f'<@{client.user.id}>', '', 1).strip()
+        user_message = clean_content
+        log.info(f"Menção recebida de {message.author} ({message.author.id}) no canal #{message.channel} (Servidor: {message.guild}): '{user_message}'")
     elif is_dm:
         user_message = message.content.strip()
-        log.info(f"DM recebida de {message.author}: '{user_message}'")
+        log.info(f"DM recebida de {message.author} ({message.author.id}): '{user_message}'")
 
-    # 4. Verificar se há conteúdo após a menção (ou na DM)
+    # 4. Verificar se há conteúdo após a limpeza
     if not user_message:
-        # Se não houver texto após a menção ou na DM (exceto a própria menção)
-        await message.channel.send(f"Olá, {message.author.mention}! Precisa de ajuda? Faça sua pergunta mencionando-me ou aqui na DM.")
+        log.info(f"Recebida menção/DM vazia de {message.author}. Enviando mensagem de ajuda.")
+        try:
+            # Enviar uma mensagem de ajuda se não houver prompt
+            await message.channel.send(f"Olá, {message.author.mention}! Precisa de ajuda? Faça sua pergunta mencionando-me ou aqui na DM.")
+        except discord.errors.Forbidden:
+            log.warning(f"Não foi possível enviar mensagem de ajuda para {message.author} no canal {message.channel} (permissões?).")
+        except Exception as e:
+            log.exception(f"Erro ao enviar mensagem de ajuda para {message.author}: {e}")
         return
 
     # 5. Processar com Gemini
-    async with message.channel.typing():
+    async with message.channel.typing(): # Mostra "Bot está digitando..."
         try:
-            # Enviar a mensagem do usuário para a API Gemini
+            # Enviar a mensagem do usuário para a API Gemini de forma assíncrona
             log.info(f"Enviando para Gemini: '{user_message}'")
-            # Use generate_content_async para não bloquear o bot (melhor prática)
             response = await model.generate_content_async(user_message)
             log.info("Resposta recebida da Gemini.")
 
-            # Verificar se a resposta tem conteúdo
+            # Verificar se a resposta tem conteúdo de texto
             if response.text:
                 gemini_reply = response.text
                 # Enviar a resposta da Gemini de volta para o Discord
@@ -113,23 +122,38 @@ async def on_message(message):
 
             else:
                 # Se a API não retornar texto (pode ser bloqueado por segurança, etc.)
-                safety_feedback = response.prompt_feedback if hasattr(response, 'prompt_feedback') else 'N/A'
-                log.warning(f"Gemini não retornou texto para '{user_message}'. Possível bloqueio. Feedback: {safety_feedback}")
-                await message.channel.send("Não consegui gerar uma resposta. Tente reformular sua pergunta ou verifique se o conteúdo é apropriado.")
+                try:
+                    # Tenta acessar o feedback de segurança, se existir
+                    safety_feedback = response.prompt_feedback
+                    block_reason = safety_feedback.block_reason if hasattr(safety_feedback, 'block_reason') else 'N/A'
+                    log.warning(f"Gemini não retornou texto para '{user_message}'. Possível bloqueio por segurança. Razão: {block_reason}. Feedback completo: {safety_feedback}")
+                    await message.channel.send(f"Não consegui gerar uma resposta para sua mensagem. Pode ter sido bloqueada por segurança (Razão: {block_reason}). Tente reformular.")
+                except (ValueError, AttributeError):
+                     # Caso 'response.text' seja None mas não haja 'prompt_feedback' claro ou dê erro ao acessar
+                    log.warning(f"Gemini não retornou texto para '{user_message}', e não foi possível obter feedback de segurança claro. Resposta bruta: {response}")
+                    await message.channel.send("Não consegui gerar uma resposta. Tente reformular sua pergunta ou verifique se o conteúdo é apropriado.")
+
 
         except Exception as e:
-            # Lidar com erros da API Gemini ou outros problemas
+            # Lidar com erros da API Gemini ou outros problemas inesperados
             log.exception(f"Erro ao processar mensagem ou chamar API Gemini para '{user_message}': {e}")
-            await message.channel.send("Desculpe, ocorreu um erro ao tentar processar sua solicitação. Tente novamente mais tarde.")
+            try:
+                await message.channel.send("Desculpe, ocorreu um erro ao tentar processar sua solicitação. A equipe foi notificada (ou deveria!). Tente novamente mais tarde.")
+            except discord.errors.Forbidden:
+                 log.error(f"Não foi possível enviar mensagem de erro para {message.author} no canal {message.channel} (permissões?).")
+            except Exception as inner_e:
+                 log.exception(f"Erro adicional ao tentar enviar mensagem de erro ao usuário: {inner_e}")
 
 # Iniciar o bot usando o token
 try:
     log.info("Iniciando o bot...")
     client.run(DISCORD_TOKEN)
 except discord.LoginFailure:
-    log.error("Erro: Token do Discord inválido. Verifique seu arquivo .env")
+    log.error("--- ERRO CRÍTICO: TOKEN DO DISCORD INVÁLIDO ---")
+    log.error("Verifique o DISCORD_TOKEN no seu arquivo .env ou variável de ambiente.")
 except discord.PrivilegedIntentsRequired:
-    log.error("Erro: Intents Privilegiadas (como Message Content) não habilitadas no Portal do Desenvolvedor!")
-    log.error("Vá para https://discord.com/developers/applications, selecione seu bot, vá em 'Bot' e ative a 'Message Content Intent'.")
+    log.error("--- ERRO CRÍTICO: INTENTS PRIVILEGIADAS NÃO HABILITADAS ---")
+    log.error("A 'Message Content Intent' é necessária para ler mensagens.")
+    log.error("Vá para https://discord.com/developers/applications -> Seu App -> Bot -> Ative 'Message Content Intent'.")
 except Exception as e:
-    log.exception(f"Erro crítico ao iniciar ou rodar o bot: {e}")
+    log.exception(f"Erro crítico não tratado ao iniciar ou rodar o bot: {e}")
