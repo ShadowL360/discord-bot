@@ -59,7 +59,7 @@ async def on_ready():
     log.info(f'Bot conectado como {client.user}')
     log.info(f'ID do Bot: {client.user.id}')
     # Define o status do bot (opcional)
-    await client.change_presence(activity=discord.Game(name="Respondendo menções com Gemini 1.5 Flash"))
+    await client.change_presence(activity=discord.Game(name="Solving for You"))
     log.info('------ Bot Pronto ------')
 
 
