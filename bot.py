@@ -59,7 +59,7 @@ async def on_ready():
     log.info(f'Bot conectado como {client.user}')
     log.info(f'ID do Bot: {client.user.id}')
     # Define o status do bot (opcional)
-    await client.change_presence(activity=discord.Game(name="Solving for You"))
+    await client.change_presence(activity=discord.Game(name="Your Solutions"))
     log.info('------ Bot Pronto ------')
 
 
@@ -95,7 +95,7 @@ async def on_message(message: discord.Message): # Adicionado type hint para clar
         log.info(f"Recebida menção/DM vazia de {message.author}. Enviando mensagem de ajuda.")
         try:
             # Enviar uma mensagem de ajuda se não houver prompt
-            await message.channel.send(f"Olá, {message.author.mention}! Precisa de ajuda? Faça sua pergunta mencionando-me ou aqui na DM.")
+            await message.channel.send(f"Olá, {message.author.mention}! Precisa de ajuda? Faça a sua pergunta mencionando-me ou aqui na DM.")
         except discord.errors.Forbidden:
             log.warning(f"Não foi possível enviar mensagem de ajuda para {message.author} no canal {message.channel} (permissões?).")
         except Exception as e:
